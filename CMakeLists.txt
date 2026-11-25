@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
-project(StellarAnnals LANGUAGES C CXX)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" STELLAR_VERSION)
+string(STRIP "${STELLAR_VERSION}" STELLAR_VERSION)
+project(StellarAnnals VERSION ${STELLAR_VERSION} LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,6 +33,7 @@ add_library(annals_core STATIC
   src/sim.cpp
 )
 target_include_directories(annals_core PUBLIC src)
+target_compile_definitions(annals_core PUBLIC STELLAR_VERSION="${STELLAR_VERSION}")
 stellar_warnings(annals_core)
 
 # Headless command-line runner.

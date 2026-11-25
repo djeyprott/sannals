@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #endif
 
-  GLFWwindow* window = glfwCreateWindow(1600, 900, "Stellar Annals", nullptr, nullptr);
+  GLFWwindow* window = glfwCreateWindow(1600, 900, "Stellar Annals " STELLAR_VERSION, nullptr, nullptr);
   if (!window) {
     glfwTerminate();
     return 1;
@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
   sim.start();
 
   char title[128];
-  std::snprintf(title, sizeof title, "Seed %llu - %s galaxy - %zu systems", static_cast<unsigned long long>(seed),
+  std::snprintf(title, sizeof title, "v" STELLAR_VERSION " - seed %llu - %s galaxy - %zu systems", static_cast<unsigned long long>(seed),
                 galaxySizeName(size), world.systems.size());
   Viewer viewer(world, sim, title);
 

@@ -13,7 +13,7 @@ Ready-to-run builds for Windows, macOS (Apple Silicon and Intel) and Linux are o
 
 On macOS the builds aren't signed yet. The first time, right-click the program and choose Open, or run `xattr -dr com.apple.quarantine .` in its folder.
 
-To publish a new release: open the **Actions** tab, choose **Build and release**, click **Run workflow** and enter a version such as `v0.3.0`. Pushing a `v*` tag does the same.
+To publish a new release, change the number in `VERSION` (for example to `0.3.0`) and push to `main`. The build creates the `v0.3.0` tag and release on its own. Running **Build and release** from the Actions tab with a version, or pushing a `v*` tag, also works.
 
 ## Build from source
 

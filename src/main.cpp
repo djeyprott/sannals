@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
   }
 
   World world = generateGalaxy({opts.size, opts.seed});
-  std::printf("Stellar Annals | seed %llu | %s galaxy | %zu systems, %zu bodies, %zu species\n\n",
+  std::printf("Stellar Annals " STELLAR_VERSION " | seed %llu | %s galaxy | %zu systems, %zu bodies, %zu species\n\n",
               static_cast<unsigned long long>(opts.seed), galaxySizeName(opts.size), world.systems.size(),
               world.bodies.size(), world.species.size());
 
