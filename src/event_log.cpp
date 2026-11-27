@@ -12,6 +12,8 @@ const char* entityPath(EntityKind kind) {
     case EntityKind::Species: return "species";
     case EntityKind::Empire: return "empire";
     case EntityKind::Colony: return "colony";
+    case EntityKind::Figure: return "figure";
+    case EntityKind::Organization: return "organization";
   }
   return "unknown";
 }

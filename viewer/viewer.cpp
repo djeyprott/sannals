@@ -66,6 +66,28 @@ const char* bodyKindName(BodyKind k) {
 
 bool sameRef(EntityRef a, EntityKind kind, Id id) { return a.kind == kind && a.id == id; }
 
+const char* memoryPhrase(MemoryKind k) {
+  switch (k) {
+    case MemoryKind::PassedOver: return "Passed over in favour of";
+    case MemoryKind::Favoured: return "Favoured by";
+    case MemoryKind::Quarrel: return "Quarrelled with";
+    case MemoryKind::Friendship: return "Grew close to";
+    case MemoryKind::KinKilled: return "Kin killed by";
+    case MemoryKind::Overthrown: return "House overthrown by";
+    case MemoryKind::PlotAgainstMe: return "Plotted against by";
+    case MemoryKind::Spared: return "Spared by";
+  }
+  return "?";
+}
+
+const char* opinionWord(double v) {
+  if (v <= -40) return "Rival";
+  if (v <= -15) return "Dislikes";
+  if (v >= 40) return "Friend";
+  if (v >= 15) return "Likes";
+  return "Neutral";
+}
+
 }  // namespace
 
 Viewer::Viewer(World& world, Sim& sim, std::string title)
@@ -461,12 +483,13 @@ void Viewer::drawEmpires() {
 
   const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY |
                                 ImGuiTableFlags_SizingStretchProp;
-  if (ImGui::BeginTable("empires", 4, flags)) {
+  if (ImGui::BeginTable("empires", 5, flags)) {
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableSetupColumn("Empire", ImGuiTableColumnFlags_WidthStretch, 3.0f);
     ImGui::TableSetupColumn("Worlds", ImGuiTableColumnFlags_WidthStretch, 1.0f);
     ImGui::TableSetupColumn("Pop (B)", ImGuiTableColumnFlags_WidthStretch, 1.2f);
     ImGui::TableSetupColumn("Minerals", ImGuiTableColumnFlags_WidthStretch, 1.3f);
+    ImGui::TableSetupColumn("Ruler", ImGuiTableColumnFlags_WidthStretch, 2.5f);
     ImGui::TableHeadersRow();
     for (const Empire* e : rows) {
       ImGui::TableNextRow();
@@ -483,6 +506,8 @@ void Viewer::drawEmpires() {
       ImGui::Text("%.1f", empirePopulation(*e) / 1000.0);
       ImGui::TableNextColumn();
       ImGui::Text("%.0f", e->minerals);
+      ImGui::TableNextColumn();
+      if (e->ruler != kNone) entityLink({EntityKind::Figure, e->ruler});
     }
     ImGui::EndTable();
   }
@@ -506,6 +531,8 @@ void Viewer::drawDetails() {
     case EntityKind::Species: drawSpeciesDetails(at(w_.species, selection_.id)); break;
     case EntityKind::Empire: drawEmpireDetails(at(w_.empires, selection_.id)); break;
     case EntityKind::Colony: drawBodyDetails(at(w_.bodies, at(w_.colonies, selection_.id).body)); break;
+    case EntityKind::Figure: drawFigureDetails(at(w_.figures, selection_.id)); break;
+    case EntityKind::Organization: drawHouseDetails(at(w_.organizations, selection_.id)); break;
   }
   drawHistory();
   ImGui::End();
@@ -580,6 +607,10 @@ void Viewer::drawBodyDetails(const Body& b) {
     ImGui::SameLine();
     entityLink({EntityKind::Empire, c.empire});
     ImGui::Text("Founded %s", formatDate(c.foundedDay).c_str());
+    ImGui::Text("Governor");
+    ImGui::SameLine();
+    if (c.governor != kNone) entityLink({EntityKind::Figure, c.governor});
+    else ImGui::TextDisabled("vacant");
   } else {
     ImGui::TextDisabled("Not yet spacefaring");
   }
@@ -618,13 +649,36 @@ void Viewer::drawEmpireDetails(const Empire& e) {
   const auto ships = std::count_if(w_.ships.begin(), w_.ships.end(), [&](const ColonyShip& s) { return s.empire == e.id; });
   ImGui::Text("Population %.2f billion on %zu worlds", empirePopulation(e) / 1000.0, e.colonies.size());
   ImGui::Text("Mineral stockpile %.0f, colony ships in flight %lld", e.minerals, static_cast<long long>(ships));
-  ImGui::Text("Expansion drive %.0f%%", e.expansionDrive * 100.0);
+  ImGui::Text("Expansion drive %.0f%% (culture), shaped by the ruler's ambition", e.expansionDrive * 100.0);
+
+  ImGui::SeparatorText("Court");
+  ImGui::Text("%s, %s succession", e.government.c_str(), e.hereditary ? "hereditary" : "elective");
+  ImGui::Text("Ruler");
+  ImGui::SameLine();
+  if (e.ruler != kNone) entityLink({EntityKind::Figure, e.ruler});
+  else ImGui::TextDisabled("vacant");
+  if (e.ruler != kNone) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("since %s", formatDate(e.rulerSinceDay).c_str());
+  }
+  bar("Legitimacy", static_cast<float>(e.legitimacy), 100.0f);
+  ImGui::Text("High Admiral");
+  ImGui::SameLine();
+  if (e.admiral != kNone) entityLink({EntityKind::Figure, e.admiral});
+  else ImGui::TextDisabled("vacant");
+  ImGui::TextDisabled("Houses:");
+  for (Id h : e.houses) {
+    if (at(w_.organizations, h).endedDay >= 0) continue;
+    ImGui::SameLine();
+    entityLink({EntityKind::Organization, h});
+  }
 
   const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
-  if (ImGui::BeginTable("colonies", 3, flags)) {
+  if (ImGui::BeginTable("colonies", 4, flags)) {
     ImGui::TableSetupColumn("World");
     ImGui::TableSetupColumn("Pop (B)");
     ImGui::TableSetupColumn("Founded");
+    ImGui::TableSetupColumn("Governor");
     ImGui::TableHeadersRow();
     for (Id cid : e.colonies) {
       const Colony& c = at(w_.colonies, cid);
@@ -635,6 +689,168 @@ void Viewer::drawEmpireDetails(const Empire& e) {
       ImGui::Text("%.2f", c.population / 1000.0);
       ImGui::TableNextColumn();
       ImGui::TextUnformatted(formatDate(c.foundedDay).c_str());
+      ImGui::TableNextColumn();
+      if (c.governor != kNone) entityLink({EntityKind::Figure, c.governor});
+    }
+    ImGui::EndTable();
+  }
+}
+
+void Viewer::bar(const char* label, float value, float max) {
+  ImGui::TextUnformatted(label);
+  ImGui::SameLine(110);
+  char overlay[16];
+  std::snprintf(overlay, sizeof overlay, "%.0f", value);
+  ImGui::ProgressBar(value / max, ImVec2(-1, 0), overlay);
+}
+
+void Viewer::drawFigureDetails(const Figure& f) {
+  ImGui::SeparatorText(f.name.c_str());
+  const Empire& e = at(w_.empires, f.empire);
+  switch (f.role) {
+    case Role::Ruler: ImGui::Text("Ruler of the"); break;
+    case Role::Admiral: ImGui::Text("High Admiral of the"); break;
+    case Role::Governor:
+      ImGui::Text("Governor of");
+      ImGui::SameLine();
+      entityLink({EntityKind::Body, at(w_.colonies, f.seat).body});
+      ImGui::SameLine();
+      ImGui::Text("in the");
+      break;
+    case Role::None: ImGui::Text("%s of the", f.alive() ? "Subject" : "Late subject"); break;
+  }
+  ImGui::SameLine();
+  entityLink({EntityKind::Empire, e.id});
+  if (f.role != Role::None || f.house != kNone) {
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Center on map")) focusOn({EntityKind::Figure, f.id});
+  }
+
+  if (f.house != kNone) {
+    ImGui::Text("Of");
+    ImGui::SameLine();
+    entityLink({EntityKind::Organization, f.house});
+  } else {
+    ImGui::TextDisabled("A commoner, of no great house");
+  }
+  ImGui::SameLine();
+  ImGui::TextDisabled("(");
+  ImGui::SameLine(0, 0);
+  entityLink({EntityKind::Species, f.species});
+  ImGui::SameLine(0, 0);
+  ImGui::TextDisabled(")");
+
+  if (f.alive()) {
+    ImGui::Text("Born %s, age %d", formatDate(f.bornDay).c_str(), ageInYears(f, w_.day));
+  } else {
+    ImGui::Text("Born %s, died %s aged %d", formatDate(f.bornDay).c_str(), formatDate(f.diedDay).c_str(),
+                ageInYears(f, w_.day));
+  }
+  if (f.parent != kNone) {
+    ImGui::Text("Parent");
+    ImGui::SameLine();
+    entityLink({EntityKind::Figure, f.parent});
+  }
+  if (!f.children.empty()) {
+    ImGui::TextDisabled("Children:");
+    for (Id c : f.children) {
+      ImGui::SameLine();
+      entityLink({EntityKind::Figure, c});
+      if (!at(w_.figures, c).alive()) {
+        ImGui::SameLine(0, 2);
+        ImGui::TextDisabled("(d.)");
+      }
+    }
+  }
+
+  ImGui::SeparatorText("Character");
+  bar("Administration", static_cast<float>(f.administration), 20.0f);
+  bar("Military", static_cast<float>(f.military), 20.0f);
+  bar("Intrigue", static_cast<float>(f.intrigue), 20.0f);
+  bar("Ambition", static_cast<float>(f.ambition * 100.0), 100.0f);
+  bar("Loyalty", static_cast<float>(f.loyalty * 100.0), 100.0f);
+  bar("Ruthlessness", static_cast<float>(f.ruthlessness * 100.0), 100.0f);
+
+  // Strongest feelings first.
+  std::vector<Opinion> feelings = f.opinions;
+  std::sort(feelings.begin(), feelings.end(),
+            [](const Opinion& a, const Opinion& b) { return std::abs(a.value) > std::abs(b.value); });
+  if (feelings.size() > 10) feelings.resize(10);
+  feelings.erase(std::remove_if(feelings.begin(), feelings.end(), [](const Opinion& o) { return std::abs(o.value) < 5; }),
+                 feelings.end());
+  ImGui::SeparatorText("Relationships");
+  if (feelings.empty()) ImGui::TextDisabled("No strong feelings about anyone.");
+  const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
+  if (!feelings.empty() && ImGui::BeginTable("opinions", 3, flags)) {
+    for (const Opinion& o : feelings) {
+      ImGui::TableNextRow();
+      ImGui::TableNextColumn();
+      entityLink({EntityKind::Figure, o.of});
+      ImGui::TableNextColumn();
+      const ImVec4 colour = o.value < 0 ? ImVec4(0.95f, 0.45f, 0.4f, 1) : ImVec4(0.5f, 0.85f, 0.5f, 1);
+      ImGui::TextColored(colour, "%+.0f", o.value);
+      ImGui::TableNextColumn();
+      ImGui::TextDisabled("%s", opinionWord(o.value));
+    }
+    ImGui::EndTable();
+  }
+
+  ImGui::SeparatorText("Memories");
+  if (f.memories.empty()) ImGui::TextDisabled("Nothing of note.");
+  for (std::size_t i = f.memories.size(); i-- > 0;) {
+    const Memory& m = f.memories[i];
+    ImGui::PushID(static_cast<int>(i));
+    ImGui::TextDisabled("%s", formatDate(m.day).c_str());
+    ImGui::SameLine();
+    ImGui::TextUnformatted(memoryPhrase(m.kind));
+    ImGui::SameLine();
+    entityLink({EntityKind::Figure, m.about});
+    ImGui::PopID();
+  }
+}
+
+void Viewer::drawHouseDetails(const Organization& o) {
+  ImGui::SeparatorText(o.name.c_str());
+  ImGui::Text("A noble house of the");
+  ImGui::SameLine();
+  entityLink({EntityKind::Empire, o.empire});
+  if (o.founder != kNone) {
+    ImGui::Text("Founded by");
+    ImGui::SameLine();
+    entityLink({EntityKind::Figure, o.founder});
+  }
+  if (o.endedDay >= 0) {
+    ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.4f, 1), "Died out %s", formatDate(o.endedDay).c_str());
+  } else {
+    bar("Prestige", static_cast<float>(o.prestige), 100.0f);
+  }
+
+  std::vector<Id> living;
+  int dead = 0;
+  for (Id m : o.members) {
+    if (at(w_.figures, m).alive()) living.push_back(m);
+    else ++dead;
+  }
+  std::sort(living.begin(), living.end(),
+            [this](Id a, Id b) { return at(w_.figures, a).bornDay < at(w_.figures, b).bornDay; });
+
+  ImGui::SeparatorText("Members");
+  ImGui::TextDisabled("%zu living, %d dead", living.size(), dead);
+  const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
+  if (!living.empty() && ImGui::BeginTable("members", 3, flags)) {
+    ImGui::TableSetupColumn("Name");
+    ImGui::TableSetupColumn("Age");
+    ImGui::TableSetupColumn("Office");
+    ImGui::TableHeadersRow();
+    for (Id m : living) {
+      const Figure& f = at(w_.figures, m);
+      ImGui::TableNextRow();
+      ImGui::TableNextColumn();
+      entityLink({EntityKind::Figure, m});
+      ImGui::TableNextColumn();
+      ImGui::Text("%d", ageInYears(f, w_.day));
+      ImGui::TableNextColumn();
+      if (f.role != Role::None) ImGui::TextUnformatted(roleName(f.role));
     }
     ImGui::EndTable();
   }
@@ -669,6 +885,10 @@ bool Viewer::eventMentionsSelection(const Event& e) const {
         if (sameRef(r, EntityKind::Species, selection_.id)) return true;
         if (r.kind == EntityKind::Empire && at(w_.empires, r.id).species == selection_.id) return true;
         break;
+      case EntityKind::Organization:
+        if (sameRef(r, EntityKind::Organization, selection_.id)) return true;
+        if (r.kind == EntityKind::Figure && at(w_.figures, r.id).house == selection_.id) return true;
+        break;
       default:
         if (sameRef(r, selection_.kind, selection_.id)) return true;
         break;
@@ -684,6 +904,12 @@ Id Viewer::systemOf(EntityRef ref) const {
     case EntityKind::Colony: return at(w_.bodies, at(w_.colonies, ref.id).body).system;
     case EntityKind::Species: return at(w_.bodies, at(w_.species, ref.id).homeworld).system;
     case EntityKind::Empire: return at(w_.bodies, at(w_.colonies, at(w_.empires, ref.id).capital).body).system;
+    case EntityKind::Figure: {
+      const Figure& f = at(w_.figures, ref.id);
+      if (f.role == Role::Governor) return systemOf({EntityKind::Colony, f.seat});
+      return systemOf({EntityKind::Empire, f.empire});
+    }
+    case EntityKind::Organization: return systemOf({EntityKind::Empire, at(w_.organizations, ref.id).empire});
   }
   return kNone;
 }

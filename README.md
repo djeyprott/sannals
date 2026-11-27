@@ -1,6 +1,6 @@
 # Stellar Annals
 
-Milestone 1 (headless sim) and milestone 2 (basic viewer).
+Milestones 1 to 3: headless sim, basic viewer, and people.
 
 The simulation core generates a galaxy from a seed, runs it forward day by day and prints the event log as events happen. Runs never end unless you pass `--years`.
 
@@ -37,7 +37,7 @@ Needs CMake 3.20+ and a C++20 compiler (GCC 11+, Clang 14+ or MSVC 2022). The fi
 - **Map:** drag to pan, mouse wheel to zoom, F to fit. Stars are coloured by class; claimed systems get their empire's colour. Colony ships move along the lanes. Shaded borders show each empire's space: every settled system claims the space around it, larger and capital systems claim more, and where claims meet the border falls between them. Hover empty space to see who claims it.
 - **Time:** Space pauses; keys 1-6 set the speed from 1 day to 5 years per second.
 - **Chronicle:** every name is a link. Click one, or a star, to open it in Details.
-- **Details:** stats for the selected system, world, species or empire, plus a History list of every event that mentions it.
+- **Details:** stats for the selected system, world, species, empire, person or noble house, plus a History list of every event that mentions it. A person's page shows their office, family, talents, temperament, strongest relationships and memories; a house page lists its living members.
 
 The viewer only reads the world and asks the sim to step; it never changes world state itself.
 
@@ -60,6 +60,7 @@ The viewer only reads the world and asks the sim to step; it never changes world
 | `src/event_log.*` | Event records with entity references, rendered as plain text or links |
 | `src/galaxy_gen.*` | Spiral galaxy, bodies, jump lanes (always connected), species homeworlds |
 | `src/sim.*` | Updates on three schedules: daily, monthly and yearly |
+| `src/sim_people.cpp` | Figures and noble houses: births, deaths, offices, succession, opinions, plots |
 | `src/territory.*` | Which empire claims each patch of space, for borders |
 | `src/main.cpp` | Headless runner: command-line options, live event printing, end-of-run summary |
 | `viewer/main.cpp` | Window, OpenGL and Dear ImGui setup, main loop |
@@ -70,8 +71,10 @@ The viewer only reads the world and asks the sim to step; it never changes world
 - **Daily:** colony ships travel along jump lanes.
 - **Monthly:** population grows toward each world's limit for that species; colonies mine minerals into the empire's stockpile, and deposits run dry.
 - **Yearly:** species before spaceflight advance toward it and found empires when they get there; empires spend minerals on colony ships aimed at the best reachable world; population milestones are logged.
+- **People (yearly):** each empire has noble houses whose members are born, grow up, take office and die. Rulers succeed by bloodline or council election depending on the government. Governors run colonies (a good one mines more), a High Admiral commands, and an ambitious ruler pushes expansion harder. Figures form opinions and remember what was done to them: being passed over, a parent executed, a coup against their house. Disaffected figures plot; a plot can fail and end in execution or mercy, or succeed and put a new dynasty on the throne.
 
 ## Known gaps (on purpose, for later milestones)
 
-- Empires stop expanding once nearby good worlds are taken, and minerals pile up. That surplus is meant for milestones 2 to 4: people, politics and fleets.
-- There's no conflict yet, so empires never fall. That's milestone 3.
+- Empires stop expanding once nearby good worlds are taken, and minerals pile up. That surplus is meant for fleets and war (milestone 5).
+- Coups change rulers but empires never break apart. Secession and collapse are milestone 4.
+- A ruler who dies with only child heirs passes the throne to the eldest adult relative; regencies come later.

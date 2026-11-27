@@ -234,6 +234,7 @@ void seedSpecies(World& w, Rng& rng, NameGen& names, int target, double spacefar
     s.prefGravity = body.gravity;
     s.growthRate = rng.uniform(0.01, 0.03);
     s.techAptitude = rng.uniform(0.5, 2.0);
+    s.lifespanYears = rng.uniform(60, 220);
     s.techProgress = rng.chance(spacefaringShare) ? 1.0 : rng.uniform(0.0, 0.9);
 
     body.minerals = std::max(body.minerals, rng.uniform(8000, 20000));

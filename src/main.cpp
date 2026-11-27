@@ -87,11 +87,13 @@ void printSummary(const World& w) {
   std::sort(empires.begin(), empires.end(),
             [&](const Empire* a, const Empire* b) { return population(*a) > population(*b); });
 
-  std::printf("\n%-32s %8s %14s %12s\n", "Empire", "Worlds", "Population (B)", "Minerals");
+  std::printf("\n%-32s %8s %14s %12s  %s\n", "Empire", "Worlds", "Population (B)", "Minerals", "Ruler");
   for (const Empire* e : empires) {
-    std::printf("%-32s %8zu %14.1f %12.0f\n", e->name.c_str(), e->colonies.size(), population(*e) / 1000.0,
-                e->minerals);
+    const std::string ruler = e->ruler == kNone ? "-" : w.figures[static_cast<std::size_t>(e->ruler)].name;
+    std::printf("%-32s %8zu %14.1f %12.0f  %s\n", e->name.c_str(), e->colonies.size(), population(*e) / 1000.0,
+                e->minerals, ruler.c_str());
   }
+  std::printf("\nFigures recorded: %zu, noble houses: %zu\n", w.figures.size(), w.organizations.size());
 
   int preSpaceflight = 0;
   for (const Species& s : w.species) preSpaceflight += s.spacefaring ? 0 : 1;

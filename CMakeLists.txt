@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" STELLAR_VERSION)
 string(STRIP "${STELLAR_VERSION}" STELLAR_VERSION)
 project(StellarAnnals VERSION ${STELLAR_VERSION} LANGUAGES C CXX)
+# Re-run configure when VERSION changes, so local builds pick up the new number.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS VERSION)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,6 +33,7 @@ add_library(annals_core STATIC
   src/event_log.cpp
   src/galaxy_gen.cpp
   src/sim.cpp
+  src/sim_people.cpp
   src/territory.cpp
 )
 target_include_directories(annals_core PUBLIC src)

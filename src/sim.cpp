@@ -18,6 +18,8 @@ const T& at(const std::vector<T>& v, Id id) {
 const char* const kGovernmentForms[] = {"Hegemony", "Republic",     "Dominion",  "Concord",
                                         "Directorate", "Union",     "Imperium",  "Commonwealth",
                                         "Collective",  "Ascendancy", "Compact",  "Sovereignty"};
+// Whether each form above passes power by bloodline (true) or by council election.
+const bool kHereditary[] = {true, false, true, false, false, false, true, false, false, true, false, true};
 
 // Total population thresholds (millions) that earn a chronicle entry.
 const double kPopulationMilestones[] = {1e4, 3e4, 1e5, 3e5, 1e6, 3e6};
@@ -25,7 +27,12 @@ constexpr int kMilestoneCount = static_cast<int>(std::size(kPopulationMilestones
 
 }  // namespace
 
-Sim::Sim(World& world, SimConfig config) : w_(world), cfg_(config), rng_(Rng(world.seed).fork(0x5157)) {}
+Sim::Sim(World& world, SimConfig config)
+    : w_(world),
+      cfg_(config),
+      rng_(Rng(world.seed).fork(0x5157)),
+      nameRng_(Rng(world.seed).fork(0x4E414D45)),
+      names_(nameRng_) {}
 
 void Sim::start() { checkEmergence(); }
 
@@ -99,7 +106,10 @@ void Sim::monthlyTick() {
     if (c.empire == kNone) continue;  // pre-spaceflight peoples don't feed an empire
 
     // Mining: output scales with population and runs the deposit down.
-    const double wanted = c.population * 0.002;
+    // A capable governor runs the mines better; an empty seat runs them badly.
+    const double management =
+        c.governor == kNone ? 0.7 : 0.7 + 0.03 * at(w_.figures, c.governor).administration;
+    const double wanted = c.population * 0.002 * management;
     const double mined = std::min(wanted, body.minerals);
     body.minerals -= mined;
     at(w_.empires, c.empire).minerals += mined;
@@ -119,9 +129,11 @@ void Sim::yearlyTick() {
   }
   checkEmergence();
 
-  for (Empire& e : w_.empires) {
-    planExpansion(e);
-    checkMilestones(e);
+  for (std::size_t i = 0; i < w_.empires.size(); ++i) {
+    const Id id = static_cast<Id>(i);
+    peopleTick(id);
+    planExpansion(w_.empires[i]);
+    checkMilestones(w_.empires[i]);
   }
 }
 
@@ -134,7 +146,10 @@ void Sim::checkEmergence() {
 void Sim::foundEmpire(Species& s) {
   Empire e;
   e.id = static_cast<Id>(w_.empires.size());
-  e.name = s.name + " " + kGovernmentForms[rng_.next() % std::size(kGovernmentForms)];
+  const std::size_t form = rng_.next() % std::size(kGovernmentForms);
+  e.government = kGovernmentForms[form];
+  e.hereditary = kHereditary[form];
+  e.name = s.name + " " + e.government;
   e.species = s.id;
   e.capital = at(w_.bodies, s.homeworld).colony;
   e.colonies = {e.capital};
@@ -149,12 +164,20 @@ void Sim::foundEmpire(Species& s) {
   const Id id = w_.empires.back().id;
   emit(EventType::EmpireFounded, Importance::Major, "The {0} of {1} reach the stars and found the {2}.",
        {{EntityKind::Species, s.id}, {EntityKind::Body, s.homeworld}, {EntityKind::Empire, id}});
+  seedElite(id);
+}
+
+// Half culture, half whoever is in charge: an ambitious ruler pushes outward.
+double Sim::effectiveDrive(const Empire& e) const {
+  if (e.ruler == kNone) return e.expansionDrive;
+  return 0.5 * e.expansionDrive + 0.5 * at(w_.figures, e.ruler).ambition;
 }
 
 void Sim::planExpansion(Empire& e) {
-  const int maxLaunches = 1 + static_cast<int>(e.expansionDrive * 2.0);
+  const double drive = effectiveDrive(e);
+  const int maxLaunches = 1 + static_cast<int>(drive * 2.0);
   for (int n = 0; n < maxLaunches && e.minerals >= cfg_.colonyShipCost; ++n) {
-    const std::optional<Target> target = chooseTarget(e);
+    const std::optional<Target> target = chooseTarget(e, drive);
     if (!target) break;
 
     Colony& capital = at(w_.colonies, e.capital);
@@ -180,7 +203,7 @@ bool Sim::isTargeted(Id body) const {
 
 // Breadth-first search over jump lanes from the capital, scoring every free
 // body by habitability discounted by distance in jumps.
-std::optional<Sim::Target> Sim::chooseTarget(const Empire& e) const {
+std::optional<Sim::Target> Sim::chooseTarget(const Empire& e, double drive) const {
   const Species& species = at(w_.species, e.species);
   const Id start = at(w_.bodies, at(w_.colonies, e.capital).body).system;
 
@@ -199,7 +222,7 @@ std::optional<Sim::Target> Sim::chooseTarget(const Empire& e) const {
     }
   }
 
-  const double threshold = 0.45 - 0.25 * e.expansionDrive;  // bolder empires settle worse worlds
+  const double threshold = 0.45 - 0.25 * drive;  // bolder empires settle worse worlds
   double bestScore = 0.0;
   Id bestBody = kNone;
   for (Id sys : frontier) {

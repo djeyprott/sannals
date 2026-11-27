@@ -11,7 +11,7 @@
 // placeholders like {0}, {1} that point at entity references. That keeps every
 // name in the chronicle linkable to its legends page later.
 
-enum class EntityKind { System, Body, Species, Empire, Colony };
+enum class EntityKind { System, Body, Species, Empire, Colony, Figure, Organization };
 
 struct EntityRef {
   EntityKind kind;
@@ -25,6 +25,16 @@ enum class EventType {
   ColonyShipLost,
   DepositDepleted,
   PopulationMilestone,
+  // People
+  FigureBorn,
+  FigureDied,
+  Appointed,
+  Succession,
+  Coup,
+  PlotFailed,
+  Rivalry,
+  HouseFounded,
+  HouseExtinct,
 };
 
 enum class Importance { Minor = 0, Notable = 1, Major = 2 };

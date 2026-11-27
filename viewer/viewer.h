@@ -43,6 +43,9 @@ class Viewer {
   void drawBodyDetails(const Body& body);
   void drawSpeciesDetails(const Species& sp);
   void drawEmpireDetails(const Empire& e);
+  void drawFigureDetails(const Figure& f);
+  void drawHouseDetails(const Organization& o);
+  void bar(const char* label, float value, float max);
   void drawHistory();
 
   // Helpers
