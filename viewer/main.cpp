@@ -93,28 +93,30 @@ int main(int argc, char** argv) {
   char title[128];
   std::snprintf(title, sizeof title, "v" STELLAR_VERSION " - seed %llu - %s galaxy - %zu systems", static_cast<unsigned long long>(seed),
                 galaxySizeName(size), world.systems.size());
-  Viewer viewer(world, sim, title);
+  {
+    Viewer viewer(world, sim, title);  // scoped: frees its GL texture before shutdown
 
-  while (!glfwWindowShouldClose(window)) {
-    glfwPollEvents();
-    if (glfwGetWindowAttrib(window, GLFW_ICONIFIED)) {
-      ImGui_ImplGlfw_Sleep(10);
-      continue;
+    while (!glfwWindowShouldClose(window)) {
+      glfwPollEvents();
+      if (glfwGetWindowAttrib(window, GLFW_ICONIFIED)) {
+        ImGui_ImplGlfw_Sleep(10);
+        continue;
+      }
+
+      ImGui_ImplOpenGL3_NewFrame();
+      ImGui_ImplGlfw_NewFrame();
+      ImGui::NewFrame();
+      viewer.frame(io.DeltaTime);
+      ImGui::Render();
+
+      int width, height;
+      glfwGetFramebufferSize(window, &width, &height);
+      glViewport(0, 0, width, height);
+      glClearColor(0.02f, 0.025f, 0.05f, 1.0f);
+      glClear(GL_COLOR_BUFFER_BIT);
+      ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+      glfwSwapBuffers(window);
     }
-
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
-    viewer.frame(io.DeltaTime);
-    ImGui::Render();
-
-    int width, height;
-    glfwGetFramebufferSize(window, &width, &height);
-    glViewport(0, 0, width, height);
-    glClearColor(0.02f, 0.025f, 0.05f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    glfwSwapBuffers(window);
   }
 
   ImGui_ImplOpenGL3_Shutdown();

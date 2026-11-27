@@ -6,6 +6,7 @@
 
 #include "event_log.h"
 #include "sim.h"
+#include "territory.h"
 #include "world.h"
 
 struct ImVec2;
@@ -15,6 +16,9 @@ struct ImVec2;
 class Viewer {
  public:
   Viewer(World& world, Sim& sim, std::string title);
+  ~Viewer();  // must run while the OpenGL context is alive
+  Viewer(const Viewer&) = delete;
+  Viewer& operator=(const Viewer&) = delete;
 
   // Call once per frame between ImGui::NewFrame() and ImGui::Render().
   void frame(float dt);
@@ -50,6 +54,7 @@ class Viewer {
   Id systemOf(EntityRef ref) const;
   void fitView(float width, float height);
   void recomputeOwnership();
+  void updateTerritory();
   double empirePopulation(const Empire& e) const;
 
   World& w_;
@@ -70,6 +75,18 @@ class Viewer {
   bool showLanes_ = true;
   bool showShips_ = true;
   bool showLabels_ = true;
+  bool showBorders_ = true;
+
+  // Borders: recomputed only when settlements change, drawn as one texture
+  Territory territory_;
+  std::uint64_t territorySignature_ = 0;
+  bool territoryValid_ = false;
+  unsigned territoryTexture_ = 0;
+  struct BorderSegment {
+    double x0, y0, x1, y1;  // world coordinates
+    Id empire;
+  };
+  std::vector<BorderSegment> borders_;  // outlines, traced with marching squares
   std::vector<Id> systemOwner_;  // empire id per system, kNone if unclaimed
 
   // Event feed

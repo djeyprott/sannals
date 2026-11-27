@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <iterator>
 
+#include "gl_texture.h"
 #include "imgui.h"
 
 namespace {
@@ -26,11 +28,17 @@ const T& at(const std::vector<T>& v, Id id) {
   return v[static_cast<std::size_t>(id)];
 }
 
-ImU32 empireColor(Id id, float alpha = 1.0f) {
+ImVec4 empireRGB(Id id) {
   const float hue = std::fmod(static_cast<float>(id) * 0.618034f + 0.08f, 1.0f);
-  float r, g, b;
-  ImGui::ColorConvertHSVtoRGB(hue, 0.65f, 0.95f, r, g, b);
-  return ImGui::GetColorU32(ImVec4(r, g, b, alpha));
+  ImVec4 c(0, 0, 0, 1);
+  ImGui::ColorConvertHSVtoRGB(hue, 0.65f, 0.95f, c.x, c.y, c.z);
+  return c;
+}
+
+ImU32 empireColor(Id id, float alpha = 1.0f) {
+  ImVec4 c = empireRGB(id);
+  c.w = alpha;
+  return ImGui::ColorConvertFloat4ToU32(c);
 }
 
 ImU32 starColor(StarClass c) {
@@ -63,6 +71,10 @@ bool sameRef(EntityRef a, EntityKind kind, Id id) { return a.kind == kind && a.i
 Viewer::Viewer(World& world, Sim& sim, std::string title)
     : w_(world), sim_(sim), title_(std::move(title)), resolve_([this](EntityRef r) { return w_.nameOf(r); }) {}
 
+Viewer::~Viewer() {
+  if (territoryTexture_ != 0) gltex::destroy(territoryTexture_);
+}
+
 void Viewer::frame(float dt) {
   ImGuiIO& io = ImGui::GetIO();
   // Shortcuts work whenever the player isn't typing into a text field,
@@ -77,6 +89,7 @@ void Viewer::frame(float dt) {
 
   advance(dt);
   recomputeOwnership();
+  updateTerritory();
 
   drawMap();
   drawControls();
@@ -103,6 +116,79 @@ void Viewer::recomputeOwnership() {
     const Id sys = at(w_.bodies, c.body).system;
     Id& owner = systemOwner_[static_cast<std::size_t>(sys)];
     if (owner == kNone) owner = c.empire;
+  }
+}
+
+void Viewer::updateTerritory() {
+  const std::uint64_t signature = territorySignature(w_);
+  if (territoryValid_ && signature == territorySignature_) return;
+  territorySignature_ = signature;
+  territoryValid_ = true;
+  territory_ = computeTerritory(w_);
+
+  // Fill: a soft tint per empire, uploaded as one texture.
+  const int width = territory_.width, height = territory_.height;
+  std::vector<std::uint32_t> pixels(static_cast<std::size_t>(width) * static_cast<std::size_t>(height), 0);
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      const Id owner = territory_.at(x, y);
+      if (owner == kNone) continue;
+      const ImVec4 c = empireRGB(owner);
+      pixels[static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x)] =
+          IM_COL32(static_cast<int>(c.x * 255), static_cast<int>(c.y * 255), static_cast<int>(c.z * 255), 48);
+    }
+  }
+  if (territoryTexture_ == 0) territoryTexture_ = gltex::create();
+  gltex::upload(territoryTexture_, width, height, pixels.data());
+
+  // Outlines: marching squares over cell centres, per empire, so borders are
+  // drawn as lines that stay crisp at any zoom.
+  // Corner bits: 1 top-left, 2 top-right, 4 bottom-right, 8 bottom-left.
+  // Edges: 0 top, 1 right, 2 bottom, 3 left. Each case lists edge pairs to join.
+  static const int kCases[16][4] = {
+      {-1, -1, -1, -1}, {3, 0, -1, -1}, {0, 1, -1, -1}, {3, 1, -1, -1}, {1, 2, -1, -1}, {3, 0, 1, 2},
+      {0, 2, -1, -1},   {3, 2, -1, -1}, {2, 3, -1, -1}, {0, 2, -1, -1}, {0, 1, 2, 3},  {1, 2, -1, -1},
+      {3, 1, -1, -1},   {0, 1, -1, -1}, {3, 0, -1, -1}, {-1, -1, -1, -1}};
+  const double cs = territory_.cellSize, ox = territory_.originX, oy = territory_.originY;
+  auto edgePoint = [&](int x, int y, int edge, double& px, double& py) {
+    // Cell centres sit at (i + 0.5); edge midpoints lie between two of them.
+    double u = 0, v = 0;
+    switch (edge) {
+      case 0: u = x + 1.0; v = y + 0.5; break;
+      case 1: u = x + 1.5; v = y + 1.0; break;
+      case 2: u = x + 1.0; v = y + 1.5; break;
+      default: u = x + 0.5; v = y + 1.0; break;
+    }
+    px = ox + u * cs;
+    py = oy + v * cs;
+  };
+
+  borders_.clear();
+  for (int y = -1; y < height; ++y) {
+    for (int x = -1; x < width; ++x) {
+      const Id corners[4] = {territory_.at(x, y), territory_.at(x + 1, y), territory_.at(x + 1, y + 1),
+                             territory_.at(x, y + 1)};
+      if (corners[0] == corners[1] && corners[1] == corners[2] && corners[2] == corners[3]) continue;
+      for (int k = 0; k < 4; ++k) {
+        const Id e = corners[k];
+        if (e == kNone) continue;
+        bool seen = false;  // trace each empire once per square
+        for (int j = 0; j < k; ++j) seen = seen || corners[j] == e;
+        if (seen) continue;
+        int mask = 0;
+        for (int j = 0; j < 4; ++j) {
+          if (corners[j] == e) mask |= 1 << j;
+        }
+        const int* pairs = kCases[mask];
+        for (int p = 0; p < 4 && pairs[p] >= 0; p += 2) {
+          BorderSegment s;
+          s.empire = e;
+          edgePoint(x, y, pairs[p], s.x0, s.y0);
+          edgePoint(x, y, pairs[p + 1], s.x1, s.y1);
+          borders_.push_back(s);
+        }
+      }
+    }
   }
 }
 
@@ -171,6 +257,17 @@ void Viewer::drawMap() {
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !mapDragged_ && hovered != kNone) {
       select({EntityKind::System, hovered});
     }
+    if (hovered == kNone && showBorders_ && territoryValid_ && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+      const double wx = camX_ + (mouse.x - center.x) / scale_;
+      const double wy = camY_ + (mouse.y - center.y) / scale_;
+      const Id claimant = territory_.at(static_cast<int>((wx - territory_.originX) / territory_.cellSize),
+                                        static_cast<int>((wy - territory_.originY) / territory_.cellSize));
+      if (claimant != kNone) {
+        ImGui::BeginTooltip();
+        ImGui::TextColored(empireRGB(claimant), "%s space", at(w_.empires, claimant).name.c_str());
+        ImGui::EndTooltip();
+      }
+    }
     if (hovered != kNone && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
       const StarSystem& s = at(w_.systems, hovered);
       const Id owner = systemOwner_[static_cast<std::size_t>(hovered)];
@@ -188,6 +285,18 @@ void Viewer::drawMap() {
     return p.x > vp->Pos.x - margin && p.y > vp->Pos.y - margin && p.x < vp->Pos.x + size.x + margin &&
            p.y < vp->Pos.y + size.y + margin;
   };
+
+  if (showBorders_ && territoryTexture_ != 0) {
+    const ImVec2 p0 = toScreen(territory_.originX, territory_.originY);
+    const ImVec2 p1 = toScreen(territory_.originX + territory_.width * territory_.cellSize,
+                               territory_.originY + territory_.height * territory_.cellSize);
+    dl->AddImage(static_cast<ImTextureID>(static_cast<std::intptr_t>(territoryTexture_)), p0, p1);
+    for (const BorderSegment& s : borders_) {
+      const ImVec2 a = toScreen(s.x0, s.y0);
+      if (!onScreen(a)) continue;
+      dl->AddLine(a, toScreen(s.x1, s.y1), empireColor(s.empire, 0.9f), 1.5f);
+    }
+  }
 
   if (showLanes_) {
     const ImU32 laneColor = IM_COL32(80, 95, 130, 110);
@@ -277,6 +386,8 @@ void Viewer::drawControls() {
   ImGui::Checkbox("Ships", &showShips_);
   ImGui::SameLine();
   ImGui::Checkbox("Names", &showLabels_);
+  ImGui::SameLine();
+  ImGui::Checkbox("Borders", &showBorders_);
   ImGui::SameLine();
   if (ImGui::SmallButton("Fit")) viewFitted_ = false;
   ImGui::TextDisabled("Space pause - 1-6 speed - F fit - drag pan - wheel zoom");

@@ -31,6 +31,7 @@ add_library(annals_core STATIC
   src/event_log.cpp
   src/galaxy_gen.cpp
   src/sim.cpp
+  src/territory.cpp
 )
 target_include_directories(annals_core PUBLIC src)
 target_compile_definitions(annals_core PUBLIC STELLAR_VERSION="${STELLAR_VERSION}")
@@ -73,7 +74,7 @@ if(STELLAR_BUILD_VIEWER)
   target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
   target_link_libraries(imgui PUBLIC glfw OpenGL::GL)
 
-  add_executable(stellar_annals_viewer viewer/main.cpp viewer/viewer.cpp)
+  add_executable(stellar_annals_viewer viewer/main.cpp viewer/viewer.cpp viewer/gl_texture.cpp)
   target_link_libraries(stellar_annals_viewer PRIVATE annals_core imgui)
   stellar_warnings(stellar_annals_viewer)
 endif()
